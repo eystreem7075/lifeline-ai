@@ -3,6 +3,13 @@
 > **InnoHacks 2.0 Hackathon Project**  
 > **Full Title:** *LifeLine AI — Intelligent Ambulance Dispatch, Smart Traffic Preemption & Emergency Coordination Platform*  
 > **Location:** Tirupati Metropolitan District Emergency Operations
+## Contributors
+
+- RS Tejashree 
+- Vijay Mathew
+- S Mohammed Rasal
+- Michael Zeus D Silva
+
 
 ---
 
