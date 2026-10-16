@@ -867,7 +867,7 @@ export default function App() {
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-800 bg-navy-950/70 text-xs">
               <div className={`w-2 h-2 rounded-full ${backendConnected ? 'bg-emerald-400 animate-ping' : 'bg-red-400'}`}></div>
               <span className="text-slate-300 font-mono text-[11px]">
-                {backendConnected ? 'FastAPI :8000 (Active)' : 'Backend Disconnected'}
+                {backendConnected ? 'FastAPI Online' : 'Backend Disconnected'}
               </span>
             </div>
 
