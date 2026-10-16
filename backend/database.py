@@ -8,6 +8,9 @@ BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DB_PATH = BASE_DIR / "lifeline.db"
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
+# Normalize postgres:// to postgresql:// for SQLAlchemy compatibility
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # SQLite specific config
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}

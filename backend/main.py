@@ -377,6 +377,8 @@ app = FastAPI(
 )
 
 # CORS setup
+cors_env = os.getenv("CORS_ORIGINS", "")
+configured_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -384,6 +386,8 @@ origins = [
     "http://127.0.0.1:3000",
     "*"  # In development, allow broad access for easy testing
 ]
+if configured_origins:
+    origins.extend(configured_origins)
 
 app.add_middleware(
     CORSMiddleware,
