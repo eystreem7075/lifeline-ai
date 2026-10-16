@@ -398,6 +398,24 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def auto_api_prefix_middleware(request: Request, call_next):
+    """
+    Automatically aliases non-prefixed routes to /api so requests like
+    /auth/login, /emergencies, or /ambulances work seamlessly with or without the /api prefix.
+    """
+    path = request.url.path
+    if (
+        not path.startswith("/api")
+        and not path.startswith("/docs")
+        and not path.startswith("/redoc")
+        and not path.startswith("/openapi.json")
+        and path != "/"
+    ):
+        request.scope["path"] = f"/api{path}"
+    return await call_next(request)
+
+
 @app.get("/", tags=["System"])
 def root():
     return {

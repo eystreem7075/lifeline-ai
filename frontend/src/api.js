@@ -1,4 +1,10 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+function resolveApiBaseUrl() {
+  const envUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').trim();
+  const clean = envUrl.replace(/\/+$/, '');
+  return clean.endsWith('/api') ? clean : `${clean}/api`;
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 const TOKEN_KEY = 'lifeline_auth_token';
 const USER_KEY = 'lifeline_auth_user';
@@ -71,6 +77,9 @@ async function request(endpoint, options = {}) {
         const errorData = await response.json();
         if (typeof errorData.detail === 'string') {
           errorMessage = errorData.detail;
+          if (response.status === 404 && errorMessage === 'Not Found') {
+            errorMessage = 'API endpoint not found (404). Please verify backend URL and service status.';
+          }
         } else if (Array.isArray(errorData.detail)) {
           // Pydantic validation errors
           errorMessage = errorData.detail.map(e => `${e.loc?.slice(1)?.join('.') || 'field'}: ${e.msg}`).join(', ');
