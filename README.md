@@ -215,23 +215,47 @@ python -m pytest test_backend.py -v
 | `GET` | `/api/traffic/logs` | Real-time audit log of priority triggers, safety clearance intervals & arbitration events |
 | `POST` | `/api/traffic/sync-module1` | Seamless integration bridge: import active Module 1 dispatched emergencies into traffic simulator |
 
----
-
-## 9. Security & Prototype Disclaimer
-
-> [!WARNING]
-> **Hackathon Prototype Notice:**  
-> This application is built as a competition prototype for **InnoHacks 2.0**. It is **not** connected to actual government emergency dispatch systems, live municipal traffic lights, or actual hospital IT systems.
-> 
-> Production deployment in a municipal emergency setting strictly requires:
-> 1. Role-based authentication and authorization (RBAC) with OAuth2 / JWT.
-> 2. End-to-end data encryption in transit (HTTPS / TLS 1.3) and at rest (AES-256).
-> 3. Strict HIPAA / DISHA patient privacy review and PII redaction.
-> 4. Fault-tolerant multi-zone database replication.
+### Module 3: Authentication & Role-Based Access Control
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/auth/register` | Self-register a new account (restricted to `patient`, `operator`, `hospital`; `admin` self-registration blocked) |
+| `POST` | `/api/auth/login` | Authenticate with email & password, check brute-force rate limit, and return JWT Bearer session |
+| `GET` | `/api/auth/me` | Fetch verified user identity and assigned role claims using Bearer token |
+| `POST` | `/api/auth/logout` | Server acknowledgment for client session token removal |
+| `POST` | `/api/auth/forgot-password` | Generate single-use, 15-minute expiring reset token (returns token in dev mode) |
+| `POST` | `/api/auth/reset-password` | Update account password using validated, unexpired one-time reset token |
+| `GET` | `/api/auth/users` | Admin-only endpoint to inspect registered system users, roles, and status |
 
 ---
 
-## 10. Future Integration Roadmap
+## 9. Demo Credentials (1-Click Fast Fill)
 
-- **Module 3 (Multi-Depot Fleet Optimization & Dynamic Rerouting):** Graph-based hospital load balancing, dynamic congestion rerouting, and predictive dispatch placement.
-- **Module 4 (Patient & Family Communication Portal):** Public-facing SMS / web tracking link allowing family to monitor ambulance arrival without calling the emergency room.
+For hackathon evaluators, 4 pre-seeded role accounts are provided. On the Login screen, click any of the 1-click pills to auto-fill credentials:
+
+| Role | Email | Password | Primary Capabilities |
+|---|---|---|---|
+| **Administrator** | `admin@lifeline.ai` | `Admin@123` | Full access to Command Center, Queue, Fleet, Traffic Preemption (Mod 2), User Management (Mod 3), and Role Preview Switcher |
+| **Ambulance Operator** | `operator@lifeline.ai` | `Operator@123` | Vehicle telemetry (AMB-101), status transitions (`en_route` → `arrived` → `completed`), and direct arterial green wave preemption |
+| **Hospital Coordinator** | `hospital@lifeline.ai` | `Hospital@123` | Facility selector, inbound emergency queue, triage readiness, ICU/trauma bay capacity, and patient handover admissions |
+| **Patient / Requester** | `patient@lifeline.ai` | `Patient@123` | Prominent SOS emergency request button, live 4-stage tracking of assigned ambulance, and emergency first-aid protocols |
+
+---
+
+## 10. Security Architecture
+
+1. **Bcrypt Password Hashing:** Salted rounds (cost factor 12). Plaintext passwords are never stored in memory or persistent storage.
+2. **JWT Session Management:** HMAC-SHA256 (`HS256`) tokens signed with environment-configured secret key. Includes expiry claims (24h default, 7-day remember-me).
+3. **Brute-Force Rate Limiting:** In-memory tracking restricts failed login attempts to a maximum of 5 attempts per 5-minute rolling window per client/account.
+4. **No User Enumeration:** Authentication failures return generic error responses (`"Invalid email or password"`) preventing account discovery.
+5. **Secure Self-Registration Boundaries:** Users cannot elevate privileges to `admin` during registration; administrator accounts are strictly provisioned by district supervisors.
+6. **Role-Based API Enforcement:** FastAPI dependency injection (`require_role([...])`) validates JWT claims on every protected endpoint.
+
+---
+
+## 11. Running Tests
+
+```bash
+# Run complete test suite (33 automated unit and integration tests across all modules)
+pytest backend/test_auth.py backend/test_backend.py backend/test_traffic.py -v
+```
+

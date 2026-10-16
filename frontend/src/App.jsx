@@ -29,12 +29,42 @@ import {
   User,
   Users,
   X,
-  Zap
+  Zap,
+  LogOut,
+  KeyRound,
+  Shield,
+  ShieldCheck
 } from 'lucide-react';
 import api from './api';
 import TrafficPreemptionDashboard from './TrafficPreemptionDashboard';
+import AuthView from './components/AuthView';
+import PatientPortal from './components/PatientPortal';
+import OperatorDashboard from './components/OperatorDashboard';
+import HospitalDashboard from './components/HospitalDashboard';
+import UserManagementView from './components/UserManagementView';
 
 export default function App() {
+  // Authentication & Role State
+  const [currentUser, setCurrentUser] = useState(() => api.getStoredUser());
+  const [authChecking, setAuthChecking] = useState(true);
+  const [previewRole, setPreviewRole] = useState(null); // Allows Admin to preview other roles
+
+  const effectiveRole = previewRole || currentUser?.role || 'admin';
+
+  const getDefaultSection = (role) => {
+    switch (role?.toLowerCase()) {
+      case 'patient':
+        return 'patient-portal';
+      case 'operator':
+        return 'operator-dashboard';
+      case 'hospital':
+        return 'hospital-dashboard';
+      case 'admin':
+      default:
+        return 'command-center';
+    }
+  };
+
   // Global & Data States
   const [backendConnected, setBackendConnected] = useState(false);
   const [stats, setStats] = useState({
@@ -59,9 +89,10 @@ export default function App() {
       const urlParams = new URLSearchParams(window.location.search);
       const sectionParam = urlParams.get('section');
       if (sectionParam) return sectionParam;
-      if (window.location.hash) return window.location.hash.replace('#', '');
+      const user = api.getStoredUser();
+      if (user) return getDefaultSection(user.role);
     } catch {}
-    return 'traffic-preemption'; // Open Module 2 by default
+    return 'command-center';
   });
   const [statusFilter, setStatusFilter] = useState('all');
   const [severityFilter, setSeverityFilter] = useState('all');
@@ -85,6 +116,55 @@ export default function App() {
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4500);
+  };
+
+  // 1. Session verification on initial load
+  useEffect(() => {
+    const verifySession = async () => {
+      const token = api.getStoredToken();
+      if (!token) {
+        setAuthChecking(false);
+        return;
+      }
+      try {
+        const user = await api.getMe();
+        setCurrentUser(user);
+        // Default section if needed
+        setActiveSection((prev) => {
+          if (user.role === 'patient' && prev !== 'patient-portal') return 'patient-portal';
+          if (user.role === 'operator' && !['operator-dashboard', 'traffic-preemption', 'activity'].includes(prev)) return 'operator-dashboard';
+          if (user.role === 'hospital' && !['hospital-dashboard', 'queue', 'activity'].includes(prev)) return 'hospital-dashboard';
+          return prev;
+        });
+      } catch (err) {
+        console.warn('Session verification failed, resetting auth state:', err);
+        api.clearAuthSession();
+        setCurrentUser(null);
+      } finally {
+        setAuthChecking(false);
+      }
+    };
+    verifySession();
+  }, []);
+
+  const handleAuthSuccess = (user) => {
+    setCurrentUser(user);
+    setPreviewRole(null);
+    setActiveSection(getDefaultSection(user.role));
+    loadDashboardData(true);
+  };
+
+  const handleSignOut = () => {
+    api.clearAuthSession();
+    setCurrentUser(null);
+    setPreviewRole(null);
+    addToast('info', 'You have been safely signed out.');
+  };
+
+  const handleRolePreviewChange = (newRole) => {
+    setPreviewRole(newRole === 'admin' ? null : newRole);
+    setActiveSection(getDefaultSection(newRole));
+    addToast('info', `Switched dashboard preview to: ${newRole.toUpperCase()}`);
   };
 
   // Primary Data Fetcher
@@ -268,6 +348,141 @@ export default function App() {
     }
   };
 
+  const getSectionInfo = (section) => {
+    switch (section) {
+      case 'patient-portal':
+        return {
+          title: 'Emergency Assistance Portal',
+          tag: 'Patient SOS Portal',
+          desc: 'Request immediate ambulance dispatch, monitor live ETA, and follow emergency first-aid protocols'
+        };
+      case 'operator-dashboard':
+        return {
+          title: 'Ambulance Fleet Operations',
+          tag: 'Vehicle Telemetry',
+          desc: 'Assigned incident navigation, route status progression, and arterial signal preemption link'
+        };
+      case 'hospital-dashboard':
+        return {
+          title: 'Hospital Emergency Coordination',
+          tag: 'Inbound Patient Triage',
+          desc: 'Real-time inbound ambulance queue, trauma bay readiness, and patient handover admissions'
+        };
+      case 'users':
+        return {
+          title: 'System Authorized Accounts',
+          tag: 'Module 3: Security & Access',
+          desc: 'Manage verified user accounts, cryptographic password credentials, and role privileges'
+        };
+      case 'traffic-preemption':
+        return {
+          title: 'Smart Traffic Signal Preemption',
+          tag: 'Module 2: Arterial Corridors',
+          desc: 'Dynamic arterial green corridors, safe clearance intervals & multi-ambulance arbitration'
+        };
+      case 'queue':
+        return {
+          title: 'Emergency Incident Queue',
+          tag: 'Dispatch Queue',
+          desc: 'Active incident triage and real-time ambulance assignment'
+        };
+      case 'fleet':
+        return {
+          title: 'Ambulance Fleet Status',
+          tag: 'Vehicle Readiness',
+          desc: 'Emergency vehicle readiness, driver allocation, and depot stations'
+        };
+      case 'activity':
+        return {
+          title: 'Incident Audit Dossier',
+          tag: 'Activity Ledger',
+          desc: 'Immutable chronological audit trail of all dispatch events and status transitions'
+        };
+      case 'command-center':
+      default:
+        return {
+          title: 'Emergency Command Operations',
+          tag: 'Central Dispatch Center',
+          desc: 'Real-time incident response, triage, and ambulance fleet coordination'
+        };
+    }
+  };
+
+  const getUserRoleBadge = (role) => {
+    switch (role?.toLowerCase()) {
+      case 'admin':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-700/60 font-mono uppercase">
+            <Shield className="w-3 h-3 text-indigo-400" />
+            ADMINISTRATOR
+          </span>
+        );
+      case 'operator':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-700/60 font-mono uppercase">
+            <Truck className="w-3 h-3 text-amber-400" />
+            OPERATOR
+          </span>
+        );
+      case 'hospital':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-cyan-950 text-cyan-300 border border-cyan-700/60 font-mono uppercase">
+            <Building2 className="w-3 h-3 text-cyan-400" />
+            HOSPITAL
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-700/60 font-mono uppercase">
+            <Users className="w-3 h-3 text-emerald-400" />
+            PATIENT
+          </span>
+        );
+    }
+  };
+
+  // 1. Session verification loading screen
+  if (authChecking) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-navy-950 text-white font-sans">
+        <div className="flex flex-col items-center gap-3">
+          <HeartPulse className="w-10 h-10 text-blue-400 animate-pulse" />
+          <span className="text-xs text-slate-400 font-medium tracking-wide">
+            Verifying LifeLine AI secure session...
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Authentication view if user is not logged in
+  if (!currentUser) {
+    return (
+      <>
+        <AuthView onAuthSuccess={handleAuthSuccess} onAddToast={addToast} />
+        {/* Global Toast Notifications */}
+        <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`pointer-events-auto p-3 rounded-xl border text-xs shadow-xl animate-in slide-in-from-bottom-2 ${
+                toast.type === 'error'
+                  ? 'bg-red-950/95 border-red-700 text-red-200'
+                  : toast.type === 'success'
+                  ? 'bg-emerald-950/95 border-emerald-700 text-emerald-200'
+                  : 'bg-navy-900/95 border-blue-700 text-blue-200'
+              }`}
+            >
+              {toast.message}
+            </div>
+          ))}
+        </div>
+      </>
+    );
+  }
+
+  const currentSectionInfo = getSectionInfo(activeSection);
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-navy-950 text-slate-100 antialiased font-sans">
       {/* 1. LEFT SIDEBAR */}
@@ -293,118 +508,310 @@ export default function App() {
           </div>
         </div>
 
-        {/* Navigation Links */}
+        {/* Dynamic Role-Based Navigation Links */}
         <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
-          <div className="px-3 pb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-            Module 1 — Dispatch Operations
-          </div>
+          {/* A. PATIENT NAVIGATION */}
+          {effectiveRole === 'patient' && (
+            <>
+              <div className="px-3 pb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                Patient Emergency Services
+              </div>
+              <button
+                onClick={() => setActiveSection('patient-portal')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeSection === 'patient-portal'
+                    ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/30'
+                    : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <HeartPulse className="w-4 h-4 text-red-400" />
+                  <span>Emergency SOS Portal</span>
+                </div>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              </button>
 
-          <button
-            onClick={() => setActiveSection('command-center')}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              activeSection === 'command-center'
-                ? 'bg-blue-600/15 text-blue-400 border border-blue-500/30'
-                : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <Layers className="w-4 h-4" />
-              <span>Command Center</span>
-            </div>
-            {stats.active_emergencies > 0 && (
-              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30">
-                {stats.active_emergencies}
-              </span>
-            )}
-          </button>
+              <div className="mt-6 p-3 rounded-xl bg-navy-950/80 border border-slate-800 text-xs space-y-1.5">
+                <span className="text-slate-400 text-[10px] uppercase font-bold block">Emergency Helpline</span>
+                <div className="text-white font-mono font-bold text-sm flex items-center gap-1.5">
+                  <Phone className="w-4 h-4 text-emerald-400" />
+                  <span>108 / 112 Free SOS</span>
+                </div>
+                <p className="text-slate-400 text-[10px] leading-tight">
+                  Tirupati District Central Emergency Medical Response Line
+                </p>
+              </div>
+            </>
+          )}
 
-          <button
-            onClick={() => setActiveSection('queue')}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              activeSection === 'queue'
-                ? 'bg-blue-600/15 text-blue-400 border border-blue-500/30'
-                : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <AlertTriangle className="w-4 h-4" />
-              <span>Emergency Queue</span>
-            </div>
-            <span className="text-xs text-slate-400 font-mono">{emergencies.length}</span>
-          </button>
+          {/* B. AMBULANCE OPERATOR NAVIGATION */}
+          {effectiveRole === 'operator' && (
+            <>
+              <div className="px-3 pb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                Fleet Operations
+              </div>
+              <button
+                onClick={() => setActiveSection('operator-dashboard')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeSection === 'operator-dashboard'
+                    ? 'bg-amber-600/20 text-amber-300 border border-amber-500/30'
+                    : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Truck className="w-4 h-4 text-amber-400" />
+                  <span>Assigned Vehicle Ops</span>
+                </div>
+              </button>
 
-          <button
-            onClick={() => setActiveSection('fleet')}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              activeSection === 'fleet'
-                ? 'bg-blue-600/15 text-blue-400 border border-blue-500/30'
-                : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <Ambulance className="w-4 h-4" />
-              <span>Ambulance Fleet</span>
-            </div>
-            <span className="text-xs text-emerald-400 font-mono">{stats.available_ambulances} Free</span>
-          </button>
+              <div className="pt-3 px-3 pb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                Module 2 — Traffic AI
+              </div>
+              <button
+                onClick={() => setActiveSection('traffic-preemption')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                  activeSection === 'traffic-preemption'
+                    ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/10'
+                    : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Radio className={`w-4 h-4 ${activeSection === 'traffic-preemption' ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} />
+                  <span className="font-semibold">Arterial Green Wave</span>
+                </div>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              </button>
 
-          <button
-            onClick={() => setActiveSection('activity')}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              activeSection === 'activity'
-                ? 'bg-blue-600/15 text-blue-400 border border-blue-500/30'
-                : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <Activity className="w-4 h-4" />
-              <span>Incident Audit Logs</span>
-            </div>
-          </button>
+              <button
+                onClick={() => setActiveSection('activity')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeSection === 'activity'
+                    ? 'bg-blue-600/15 text-blue-400 border border-blue-500/30'
+                    : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Activity className="w-4 h-4" />
+                  <span>Dispatch Audit Logs</span>
+                </div>
+              </button>
+            </>
+          )}
 
-          {/* Module 2: Smart Traffic Signal Preemption Navigation */}
-          <div className="pt-4 px-3 pb-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-            <span>Module 2 — Traffic AI</span>
-            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-700/50">
-              ACTIVE
-            </span>
-          </div>
+          {/* C. HOSPITAL COORDINATOR NAVIGATION */}
+          {effectiveRole === 'hospital' && (
+            <>
+              <div className="px-3 pb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                Emergency Department
+              </div>
+              <button
+                onClick={() => setActiveSection('hospital-dashboard')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeSection === 'hospital-dashboard'
+                    ? 'bg-cyan-600/20 text-cyan-300 border border-cyan-500/30'
+                    : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Building2 className="w-4 h-4 text-cyan-400" />
+                  <span>Inbound ER Triage</span>
+                </div>
+              </button>
 
-          <button
-            onClick={() => setActiveSection('traffic-preemption')}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-              activeSection === 'traffic-preemption'
-                ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/10'
-                : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <Radio className={`w-4 h-4 ${activeSection === 'traffic-preemption' ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} />
-              <span className="font-semibold">Smart Traffic Preemption</span>
-            </div>
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-          </button>
+              <button
+                onClick={() => setActiveSection('queue')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeSection === 'queue'
+                    ? 'bg-blue-600/15 text-blue-400 border border-blue-500/30'
+                    : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>Emergency Queue</span>
+                </div>
+                <span className="text-xs text-slate-400 font-mono">{emergencies.length}</span>
+              </button>
 
-          {/* Planned Future Modules */}
-          <div className="pt-4 px-3 pb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-            Upcoming Modules
-          </div>
+              <button
+                onClick={() => setActiveSection('activity')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeSection === 'activity'
+                    ? 'bg-blue-600/15 text-blue-400 border border-blue-500/30'
+                    : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Activity className="w-4 h-4" />
+                  <span>Incident Audit Logs</span>
+                </div>
+              </button>
+            </>
+          )}
 
-          <div className="px-3 py-2 rounded-lg text-xs text-slate-400 flex items-center justify-between border border-slate-800/40 bg-slate-900/40 opacity-75">
-            <div className="flex items-center gap-2">
-              <Navigation className="w-3.5 h-3.5 text-slate-400" />
-              <span>Multi-Depot Routing</span>
-            </div>
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800 text-slate-400">Mod 3</span>
-          </div>
+          {/* D. ADMINISTRATOR (FULL ACCESS) */}
+          {effectiveRole === 'admin' && (
+            <>
+              <div className="px-3 pb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                Module 1 — Dispatch Operations
+              </div>
 
-          <div className="px-3 py-2 rounded-lg text-xs text-slate-400 flex items-center justify-between border border-slate-800/40 bg-slate-900/40 opacity-75">
-            <div className="flex items-center gap-2">
-              <Users className="w-3.5 h-3.5 text-slate-400" />
-              <span>Patient & Family Portal</span>
-            </div>
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800 text-slate-400">Mod 4</span>
-          </div>
+              <button
+                onClick={() => setActiveSection('command-center')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeSection === 'command-center'
+                    ? 'bg-blue-600/15 text-blue-400 border border-blue-500/30'
+                    : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Layers className="w-4 h-4" />
+                  <span>Command Center</span>
+                </div>
+                {stats.active_emergencies > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30">
+                    {stats.active_emergencies}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveSection('queue')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeSection === 'queue'
+                    ? 'bg-blue-600/15 text-blue-400 border border-blue-500/30'
+                    : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>Emergency Queue</span>
+                </div>
+                <span className="text-xs text-slate-400 font-mono">{emergencies.length}</span>
+              </button>
+
+              <button
+                onClick={() => setActiveSection('fleet')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeSection === 'fleet'
+                    ? 'bg-blue-600/15 text-blue-400 border border-blue-500/30'
+                    : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Ambulance className="w-4 h-4" />
+                  <span>Ambulance Fleet</span>
+                </div>
+                <span className="text-xs text-emerald-400 font-mono">{stats.available_ambulances} Free</span>
+              </button>
+
+              <button
+                onClick={() => setActiveSection('activity')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeSection === 'activity'
+                    ? 'bg-blue-600/15 text-blue-400 border border-blue-500/30'
+                    : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Activity className="w-4 h-4" />
+                  <span>Incident Audit Logs</span>
+                </div>
+              </button>
+
+              {/* Module 2: Smart Traffic Signal Preemption Navigation */}
+              <div className="pt-4 px-3 pb-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                <span>Module 2 — Traffic AI</span>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-700/50">
+                  ACTIVE
+                </span>
+              </div>
+
+              <button
+                onClick={() => setActiveSection('traffic-preemption')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                  activeSection === 'traffic-preemption'
+                    ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/10'
+                    : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Radio className={`w-4 h-4 ${activeSection === 'traffic-preemption' ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} />
+                  <span className="font-semibold">Smart Traffic Preemption</span>
+                </div>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              </button>
+
+              {/* Module 3: Security & Authorized Accounts */}
+              <div className="pt-4 px-3 pb-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                <span>Module 3 — Security</span>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-indigo-950 text-indigo-400 border border-indigo-700/50">
+                  NEW
+                </span>
+              </div>
+
+              <button
+                onClick={() => setActiveSection('users')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeSection === 'users'
+                    ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30'
+                    : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Users className="w-4 h-4 text-indigo-400" />
+                  <span>Authorized Accounts</span>
+                </div>
+              </button>
+
+              {/* Role Dashboards Preview for Hackathon Demonstrations */}
+              <div className="pt-4 px-3 pb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                Demo Role Views
+              </div>
+
+              <button
+                onClick={() => setActiveSection('patient-portal')}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-colors ${
+                  activeSection === 'patient-portal'
+                    ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 font-semibold'
+                    : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <HeartPulse className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Patient Emergency Portal</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setActiveSection('operator-dashboard')}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-colors ${
+                  activeSection === 'operator-dashboard'
+                    ? 'bg-amber-600/20 text-amber-300 border border-amber-500/30 font-semibold'
+                    : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Truck className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Ambulance Operator View</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setActiveSection('hospital-dashboard')}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-colors ${
+                  activeSection === 'hospital-dashboard'
+                    ? 'bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 font-semibold'
+                    : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Hospital Triage View</span>
+                </div>
+              </button>
+            </>
+          )}
         </nav>
 
         {/* Sidebar Footer */}
@@ -444,19 +851,13 @@ export default function App() {
           <div className="flex items-center gap-3">
             <div>
               <h2 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
-                {activeSection === 'traffic-preemption'
-                  ? 'Smart Traffic Signal Preemption'
-                  : 'Emergency Command Operations'}
+                {currentSectionInfo.title}
                 <span className="text-xs font-normal px-2 py-0.5 rounded bg-blue-900/40 text-blue-300 border border-blue-700/40">
-                  {activeSection === 'traffic-preemption'
-                    ? 'Module 2: Arterial Corridors'
-                    : 'Tirupati Dispatch Center'}
+                  {currentSectionInfo.tag}
                 </span>
               </h2>
               <p className="text-xs text-slate-400">
-                {activeSection === 'traffic-preemption'
-                  ? 'Dynamic arterial green corridors, safe clearance intervals & multi-ambulance arbitration'
-                  : 'Real-time incident response, triage, and ambulance fleet coordination'}
+                {currentSectionInfo.desc}
               </p>
             </div>
           </div>
@@ -480,31 +881,79 @@ export default function App() {
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-blue-400' : ''}`} />
             </button>
 
-            {/* Register Ambulance Button */}
-            <button
-              onClick={() => setShowAddAmbulanceModal(true)}
-              className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-700 bg-slate-850 hover:bg-slate-800 text-xs font-medium text-slate-200 transition-colors"
-            >
-              <Truck className="w-3.5 h-3.5 text-blue-400" />
-              <span>+ Add Ambulance</span>
-            </button>
+            {/* Admin Role Switcher (Preview role for demo) */}
+            {currentUser?.role === 'admin' && (
+              <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-navy-950 border border-slate-700 text-xs">
+                <span className="text-slate-400 text-[10px] uppercase font-bold">Preview View:</span>
+                <select
+                  value={previewRole || 'admin'}
+                  onChange={(e) => handleRolePreviewChange(e.target.value)}
+                  className="bg-transparent text-white font-medium text-xs focus:outline-none cursor-pointer"
+                >
+                  <option value="admin" className="bg-navy-900">Administrator (All)</option>
+                  <option value="patient" className="bg-navy-900">Patient / Requester</option>
+                  <option value="operator" className="bg-navy-900">Ambulance Operator</option>
+                  <option value="hospital" className="bg-navy-900">Hospital Coordinator</option>
+                </select>
+              </div>
+            )}
 
-            {/* New Emergency Button */}
+            {/* User Profile Pill */}
+            <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-navy-950 border border-slate-700/80">
+              <div className="w-7 h-7 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-300 font-bold text-xs">
+                {currentUser?.full_name?.charAt(0) || 'U'}
+              </div>
+              <div className="hidden md:block text-left">
+                <div className="text-xs font-semibold text-white leading-tight truncate max-w-[120px]">
+                  {currentUser?.full_name}
+                </div>
+                <div className="mt-0.5">
+                  {getUserRoleBadge(effectiveRole)}
+                </div>
+              </div>
+            </div>
+
+            {/* Sign Out Button */}
             <button
-              onClick={() => setShowRegisterModal(true)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/20 transition-all transform active:scale-95"
+              onClick={handleSignOut}
+              className="p-2 rounded-lg border border-slate-700 bg-slate-850 hover:bg-red-950/60 hover:border-red-700/60 text-slate-300 hover:text-red-300 transition-colors"
+              title="Sign Out of LifeLine AI"
             >
-              <PlusCircle className="w-4 h-4" />
-              <span>New Emergency</span>
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         </header>
 
         {/* Dashboard Scrollable Area */}
         <main className="flex-1 overflow-y-auto p-6 space-y-6">
-          {activeSection === 'traffic-preemption' ? (
+          {/* Module 3 Role Dashboards */}
+          {activeSection === 'patient-portal' && (
+            <PatientPortal currentUser={currentUser} onAddToast={addToast} />
+          )}
+
+          {activeSection === 'operator-dashboard' && (
+            <OperatorDashboard
+              currentUser={currentUser}
+              onAddToast={addToast}
+              onNavigateToPreemption={() => setActiveSection('traffic-preemption')}
+            />
+          )}
+
+          {activeSection === 'hospital-dashboard' && (
+            <HospitalDashboard currentUser={currentUser} onAddToast={addToast} />
+          )}
+
+          {activeSection === 'users' && (
+            <UserManagementView onAddToast={addToast} />
+          )}
+
+          {/* Module 2: Smart Traffic Preemption Dashboard */}
+          {activeSection === 'traffic-preemption' && (
             <TrafficPreemptionDashboard onAddToast={addToast} />
-          ) : (
+          )}
+
+          {/* Module 1: Dispatch Operations & Command Center */}
+          {(activeSection === 'command-center' || activeSection === 'queue' || activeSection === 'fleet' || activeSection === 'activity') && (
             <>
               {/* KPI CARDS SECTION */}
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">

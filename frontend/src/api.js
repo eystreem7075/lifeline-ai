@@ -1,13 +1,62 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
+const TOKEN_KEY = 'lifeline_auth_token';
+const USER_KEY = 'lifeline_auth_user';
+
+export function getStoredToken() {
+  try {
+    return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function getStoredUser() {
+  try {
+    const raw = sessionStorage.getItem(USER_KEY) || localStorage.getItem(USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveAuthSession(token, user, rememberMe = false) {
+  try {
+    sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(USER_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+
+    const storage = rememberMe ? localStorage : sessionStorage;
+    storage.setItem(TOKEN_KEY, token);
+    storage.setItem(USER_KEY, JSON.stringify(user));
+  } catch (e) {
+    console.error('Storage error:', e);
+  }
+}
+
+export function clearAuthSession() {
+  try {
+    sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(USER_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  } catch (e) {
+    console.error('Storage error:', e);
+  }
+}
+
 /**
- * Standard HTTP request wrapper with structured error handling
+ * Standard HTTP request wrapper with Bearer token authentication and structured error handling
  */
 async function request(endpoint, options = {}) {
   const url = `${API_BASE_URL}${endpoint}`;
+  const token = getStoredToken();
+
   const config = {
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
     ...options,
@@ -48,6 +97,19 @@ async function request(endpoint, options = {}) {
 }
 
 export const api = {
+  // Auth & Session
+  login: (credentials) => request('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }),
+  register: (userData) => request('/auth/register', { method: 'POST', body: JSON.stringify(userData) }),
+  getMe: () => request('/auth/me'),
+  logout: () => request('/auth/logout', { method: 'POST' }),
+  forgotPassword: (data) => request('/auth/forgot-password', { method: 'POST', body: JSON.stringify(data) }),
+  resetPassword: (data) => request('/auth/reset-password', { method: 'POST', body: JSON.stringify(data) }),
+  getSystemUsers: () => request('/auth/users'),
+  getStoredToken,
+  getStoredUser,
+  saveAuthSession,
+  clearAuthSession,
+
   // Health & System
   checkHealth: () => request('/health'),
   seedDatabase: (reset = false) => request(`/seed?reset=${reset}`, { method: 'POST' }),

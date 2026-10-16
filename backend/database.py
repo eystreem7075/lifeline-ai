@@ -32,7 +32,58 @@ def get_db():
         db.close()
 
 
+from sqlalchemy import text
+
+
+def upgrade_schema():
+    """Idempotently adds missing columns to existing SQLite tables for Module 4."""
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    with engine.connect() as conn:
+        # Check emergencies columns
+        try:
+            res = conn.execute(text("PRAGMA table_info(emergencies)"))
+            existing_cols = {row[1] for row in res.fetchall()}
+            
+            new_emergency_cols = [
+                ("patient_id", "INTEGER"),
+                ("selected_hospital_id", "INTEGER"),
+                ("latitude", "FLOAT"),
+                ("longitude", "FLOAT"),
+                ("location_description", "VARCHAR(255)"),
+                ("cancellation_reason", "TEXT"),
+                ("updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+            ]
+            for col_name, col_type in new_emergency_cols:
+                if col_name not in existing_cols:
+                    conn.execute(text(f"ALTER TABLE emergencies ADD COLUMN {col_name} {col_type}"))
+                    conn.commit()
+        except Exception as e:
+            print(f"[Schema Upgrade] Notice on emergencies table: {e}")
+
+        # Check ambulances columns
+        try:
+            res = conn.execute(text("PRAGMA table_info(ambulances)"))
+            existing_cols = {row[1] for row in res.fetchall()}
+
+            new_ambulance_cols = [
+                ("latitude", "FLOAT"),
+                ("longitude", "FLOAT"),
+                ("capability", "VARCHAR(60) DEFAULT 'Advanced Life Support (ALS)'"),
+                ("last_location_update", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+            ]
+            for col_name, col_type in new_ambulance_cols:
+                if col_name not in existing_cols:
+                    conn.execute(text(f"ALTER TABLE ambulances ADD COLUMN {col_name} {col_type}"))
+                    conn.commit()
+        except Exception as e:
+            print(f"[Schema Upgrade] Notice on ambulances table: {e}")
+
+
 def init_db():
-    """Creates all database tables defined in the models."""
+    """Creates all database tables defined in the models and performs idempotent upgrades."""
     import models  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    upgrade_schema()
+
